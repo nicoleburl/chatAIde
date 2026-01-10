@@ -1,1 +1,26 @@
+Demo Scenario 1: Indecisive Reply
+Incoming message:
+"lol idk maybe"
 
+Expected reply vibes:
+- Casual
+- Friendly
+- Low pressure
+
+Demo Scenario 2: Emotional Support
+Incoming message:
+"I'm just really overwhelmed right now"
+
+Expected reply vibes:
+- Empathetic
+- Supportive
+- Calm
+
+Demo Scenario 3: Casual Planning
+Incoming message:
+"Are you coming tonight?"
+
+Expected reply vibes:
+- Casual
+- Short
+- Natural
