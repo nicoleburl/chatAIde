@@ -229,31 +229,56 @@
     // Simulate API delay
     await delay(2000);
 
-    const response = await fetch('http://localhost:3001/generate-reply', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        messages: conversation.messages,
-        age: conversation.age || 20 // use age if you have it
-        })
-      });
+    // Try multiple ports in case the backend retried to a different port (5000..5005)
+    const ports = [5000, 5001, 5002, 5003, 5004, 5005];
 
-if (!response.ok) {
-  throw new Error('Failed to fetch from backend');
-}
+    // Helper to timeout fetch quickly if the port isn't responding
+    const fetchWithTimeout = (url, options, timeout = 2000) => {
+      return Promise.race([
+        fetch(url, options),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), timeout))
+      ]);
+    };
 
-const data = await response.json();
+    let lastError = null;
 
-// Assuming your backend returns { replies: [recommended, backup1, backup2] }
-return {
-  recommended: data.replies[0],
-  backup1: data.replies[1],
-  backup2: data.replies[2]
-};
+    for (const port of ports) {
+      const url = `http://localhost:${port}/generate-replies`;
+      try {
+        const response = await fetchWithTimeout(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ messages: conversation.messages, age: conversation.age || 20 })
+        }, 2000);
 
-return generateMockReplies(conversation);
+        if (!response.ok) {
+          lastError = new Error(`Backend responded with ${response.status} on port ${port}`);
+          continue;
+        }
+
+        const data = await response.json();
+
+        // Assuming your backend returns { replies: [recommended, backup1, backup2] }
+        return {
+          recommended: data.replies[0],
+          backup1: data.replies[1],
+          backup2: data.replies[2]
+        };
+      } catch (err) {
+        // keep trying other ports
+        lastError = err;
+      }
+    }
+
+    // If none of the ports worked, fall back to local mock replies (graceful degradation)
+    console.warn('Backend unreachable, falling back to local mock replies', lastError);
+    try {
+      showNotification('Backend unavailable — using local fallback replies');
+    } catch (nErr) {
+      // showNotification may not be available in some contexts; ignore
+    }
+
+    return generateMockReplies(conversation);
   }
 
   /**
