@@ -17,6 +17,7 @@
   const scanBtn = document.getElementById('scan-btn');
   const regenerateBtn = document.getElementById('regenerate-btn');
   const newScanBtn = document.getElementById('new-scan-btn');
+  const toggleBtn = document.getElementById('toggle-view-btn');
   
   // Reply text elements
   const recommendedText = document.getElementById('recommended-text');
@@ -40,6 +41,9 @@
     // Bottom action buttons
     regenerateBtn.addEventListener('click', handleRegenerate);
     newScanBtn.addEventListener('click', handleNewScan);
+
+    // Toggle view (demo)
+    if (toggleBtn) toggleBtn.addEventListener('click', handleToggleView);
 
     // Copy and insert buttons (delegated)
     resultsSection.addEventListener('click', (e) => {
@@ -296,6 +300,14 @@ return generateMockReplies(conversation);
     setTimeout(() => {
       notification.remove();
     }, 2000);
+  }
+
+  function handleToggleView() {
+    if (scanSection.classList.contains('hidden')) {
+      showScanSection();
+    } else {
+      showResults();
+    }
   }
 
   /**
