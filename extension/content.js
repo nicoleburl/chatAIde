@@ -85,26 +85,36 @@
 
         if (site === 'whatsapp') {
           messages = parseWhatsApp();
-          console.debug('Detected WhatsApp Web; messages found:', messages.length);
+          console.log('Detected WhatsApp Web; messages found:', messages.length);
         } else if (site === 'messenger') {
           messages = parseMessenger();
-          console.debug('Detected Messenger; messages found:', messages.length);
+          console.log('Detected Messenger; messages found:', messages.length);
         }
 
         // Fallback to generic parsing if site-specific returned nothing
         if (!messages || messages.length === 0) {
           messages = parseGeneric();
-          console.debug('Used generic parser; messages found:', messages.length);
+          console.log('Used generic parser; messages found:', messages.length);
         }
 
         const joined = messages.join(' ');
         const { tone, hasEmojis } = detectTone(joined);
 
-        // Package messages in expected shape
-        sendResponse({ context: { messages: messages.map(m => ({ text: m })), tone, hasEmojis } });
+        // Build debug info to aid diagnostics
+        const debug = {
+          site,
+          messageCount: messages.length,
+          sample: messages.slice(0, 5)
+        };
+
+        console.log('Scan result debug:', debug);
+
+        // Package messages in expected shape and include debug info
+        sendResponse({ context: { messages: messages.map(m => ({ text: m })), tone, hasEmojis }, debug });
       } catch (err) {
         console.error('Scan failed:', err);
-        sendResponse({});
+        // Include error details in debug payload
+        sendResponse({ debug: { error: err && err.message ? err.message : String(err) } });
       }
 
       return; // keep synchronous response
