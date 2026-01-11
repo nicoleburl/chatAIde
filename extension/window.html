@@ -183,8 +183,31 @@
       overflow-y: auto;
     }
 
-    .results-section.visible {
+    .results-section.visible,
+    .scan-section.visible {
       display: block;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    .visible {
+      display: block !important;
+    }
+
+    .spinner {
+      border-radius: 50%;
+      border: 6px solid rgba(0,0,0,0.06);
+      border-top-color: #667eea;
+      width: 48px;
+      height: 48px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
     }
 
     .reply-container {
@@ -454,7 +477,7 @@
         </div>
 
         <!-- Scan View -->
-        <section class="scan-section" id="scan-view">
+        <section class="scan-section" id="scan-section">
           <div class="scan-illustration">
             <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
               <circle cx="12" cy="12" r="10" opacity="0.2"/>
@@ -466,7 +489,7 @@
             ChatAIde reads your conversation with this person and generates replies that sound exactly like you
           </p>
           
-          <button class="scan-btn" onclick="showResults()">
+          <button id="scan-btn" class="scan-btn">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
             </svg>
@@ -489,8 +512,16 @@
           </div>
         </section>
 
+        <!-- Loading State -->
+        <section class="scan-section hidden" id="loading-state" aria-hidden="true">
+          <div style="padding: 40px; text-align:center;">
+            <div style="font-size:18px; margin-bottom:12px;">Generating replies…</div>
+            <div class="spinner"></div>
+          </div>
+        </section>
+
         <!-- Results View -->
-        <section class="results-section" id="results-view">
+        <section class="results-section hidden" id="results-section">
           <div class="reply-container">
             <div class="reply-label recommended-label">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -499,10 +530,10 @@
               <span>Recommended</span>
             </div>
             <div class="reply-card recommended">
-              <div class="reply-text">yeah totally! sounds good to me</div>
+              <div class="reply-text" id="recommended-text">yeah totally! sounds good to me</div>
               <div class="reply-actions">
-                <button class="action-btn">Copy</button>
-                <button class="action-btn">Insert</button>
+                <button class="action-btn copy-btn" data-reply="recommended">Copy</button>
+                <button class="action-btn insert-btn" data-reply="recommended">Insert</button>
               </div>
             </div>
           </div>
@@ -513,25 +544,25 @@
             </div>
             
             <div class="reply-card backup">
-              <div class="reply-text">for sure! i'm down</div>
+              <div class="reply-text" id="backup-text-1">for sure! i'm down</div>
               <div class="reply-actions">
-                <button class="action-btn">Copy</button>
-                <button class="action-btn">Insert</button>
+                <button class="action-btn copy-btn" data-reply="backup-1">Copy</button>
+                <button class="action-btn insert-btn" data-reply="backup-1">Insert</button>
               </div>
             </div>
 
             <div class="reply-card backup">
-              <div class="reply-text">yeah definitely 👍</div>
+              <div class="reply-text" id="backup-text-2">yeah definitely 👍</div>
               <div class="reply-actions">
-                <button class="action-btn">Copy</button>
-                <button class="action-btn">Insert</button>
+                <button class="action-btn copy-btn" data-reply="backup-2">Copy</button>
+                <button class="action-btn insert-btn" data-reply="backup-2">Insert</button>
               </div>
             </div>
           </div>
 
           <div class="bottom-actions">
-            <button class="secondary-btn">Regenerate</button>
-            <button class="primary-btn" onclick="showScan()">New Scan</button>
+            <button id="regenerate-btn" class="secondary-btn">Regenerate</button>
+            <button id="new-scan-btn" class="primary-btn">New Scan</button>
           </div>
         </section>
 
@@ -596,32 +627,11 @@
           </div>
         </div>
 
-        <button class="demo-btn" onclick="toggleView()">Toggle Scan / Results View</button>
+        <button id="toggle-view-btn" class="demo-btn">Toggle Scan / Results View</button>
       </div>
     </div>
   </div>
 
-  <script>
-    const scanView = document.getElementById('scan-view');
-    const resultsView = document.getElementById('results-view');
-
-    function showResults() {
-      scanView.style.display = 'none';
-      resultsView.classList.add('visible');
-    }
-
-    function showScan() {
-      scanView.style.display = 'flex';
-      resultsView.classList.remove('visible');
-    }
-
-    function toggleView() {
-      if (scanView.style.display === 'none') {
-        showScan();
-      } else {
-        showResults();
-      }
-    }
-  </script>
+  <script src="popup.js"></script>
 </body>
 </html>
