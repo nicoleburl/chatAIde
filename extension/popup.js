@@ -1,203 +1,192 @@
 /**
- * Conversational Aide - Popup Script
- * Handles user interaction, API communication, and response rendering
+ * ChatAIde - Popup Script
+ * Manages UI flow and backend communication
  */
 
 (function() {
   'use strict';
 
   // State
-  let selectedTone = 'calm';
-  let currentRequest = null;
+  let currentConversation = null;
+  let currentReplies = null;
 
   // DOM Elements
-  const selectedTextArea = document.getElementById('selected-text');
-  const personaTextArea = document.getElementById('persona-text');
-  const personaToggle = document.getElementById('persona-toggle');
-  const personaContent = document.getElementById('persona-content');
-  const generateBtn = document.getElementById('generate-btn');
-  const regenerateBtn = document.getElementById('regenerate-btn');
+  const scanSection = document.getElementById('scan-section');
   const loadingState = document.getElementById('loading-state');
   const resultsSection = document.getElementById('results-section');
-  const optionsContainer = document.getElementById('options-container');
-  const toneBtns = document.querySelectorAll('.tone-btn');
+  const scanBtn = document.getElementById('scan-btn');
+  const regenerateBtn = document.getElementById('regenerate-btn');
+  const newScanBtn = document.getElementById('new-scan-btn');
+  
+  // Reply text elements
+  const recommendedText = document.getElementById('recommended-text');
+  const backupText1 = document.getElementById('backup-text-1');
+  const backupText2 = document.getElementById('backup-text-2');
 
   // Initialize
   init();
 
   function init() {
-    // Step 2: Auto-populate with selected text from page
-    retrieveSelectedText();
-    
-    // Setup event listeners
     setupEventListeners();
-  }
-
-  /**
-   * Step 2: Retrieve selected text from content script
-   */
-  function retrieveSelectedText() {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (tabs[0]) {
-        chrome.tabs.sendMessage(
-          tabs[0].id,
-          { action: 'getSelectedText' },
-          (response) => {
-            if (chrome.runtime.lastError) {
-              console.log('Content script not ready:', chrome.runtime.lastError.message);
-              return;
-            }
-            
-            if (response && response.text) {
-              selectedTextArea.value = response.text;
-              selectedTextArea.focus();
-            }
-          }
-        );
-      }
-    });
   }
 
   /**
    * Setup all event listeners
    */
   function setupEventListeners() {
-    // Persona section toggle
-    personaToggle.addEventListener('click', () => {
-      const parent = personaToggle.closest('.collapsible');
-      parent.classList.toggle('open');
+    // Main scan button
+    scanBtn.addEventListener('click', handleScanAndGenerate);
+    
+    // Bottom action buttons
+    regenerateBtn.addEventListener('click', handleRegenerate);
+    newScanBtn.addEventListener('click', handleNewScan);
+
+    // Copy and insert buttons (delegated)
+    resultsSection.addEventListener('click', (e) => {
+      const copyBtn = e.target.closest('.copy-btn');
+      const insertBtn = e.target.closest('.insert-btn');
+      
+      if (copyBtn) {
+        const replyType = copyBtn.dataset.reply;
+        handleCopy(replyType, copyBtn);
+      }
+      
+      if (insertBtn) {
+        const replyType = insertBtn.dataset.reply;
+        handleInsert(replyType);
+      }
     });
-
-    // Tone selection (Step 4)
-    toneBtns.forEach(btn => {
-      btn.addEventListener('click', () => {
-        toneBtns.forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        selectedTone = btn.dataset.tone;
-      });
-    });
-
-    // Generate button (Step 5)
-    generateBtn.addEventListener('click', handleGenerate);
-
-    // Regenerate button
-    regenerateBtn.addEventListener('click', handleGenerate);
   }
 
   /**
-   * Step 5: Handle generate/regenerate request
+   * Main flow: Scan conversation and generate replies
    */
-  async function handleGenerate() {
-    const messageText = selectedTextArea.value.trim();
-    
-    // Validation
-    if (!messageText) {
-      showError('Please enter or select some text to rewrite.');
-      return;
-    }
-
-    // Prepare request data
-    currentRequest = {
-      message: messageText,
-      persona: personaTextArea.value.trim() || null,
-      tone: selectedTone,
-      timestamp: Date.now()
-    };
-
-    // Show loading state
+  async function handleScanAndGenerate() {
     showLoading();
 
     try {
-      // Step 5: Send to backend
-      const response = await sendToBackend(currentRequest);
-      
-      // Step 6: Display results
-      displayResults(response.options);
-      
+      // Step 1: Scan conversation from WhatsApp/Messenger
+      const conversation = await scanConversation();
+      currentConversation = conversation;
+
+      // Step 2: Send to backend AI to generate replies
+      const replies = await generateReplies(conversation);
+      currentReplies = replies;
+
+      // Step 3: Display the 3 replies
+      displayReplies(replies);
+
     } catch (error) {
-      console.error('Generation error:', error);
-      showError('Unable to generate options. Please try again.');
-      hideLoading();
+      console.error('Error:', error);
+      showError('Unable to scan conversation. Make sure you\'re on a messaging platform.');
+      showScanSection();
     }
   }
 
   /**
-   * Step 5: Send structured request to backend
-   * In production, replace with actual API endpoint
+   * Scan conversation messages from content script
    */
-  async function sendToBackend(requestData) {
-    // Simulate API call with delay
-    await delay(1500);
+  async function scanConversation() {
+    return new Promise((resolve, reject) => {
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (!tabs[0]) {
+          reject(new Error('No active tab'));
+          return;
+        }
 
-    // Simulated backend response
-    // In production, replace with: 
-    // const response = await fetch('YOUR_API_ENDPOINT', {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify(requestData)
-    // });
-    // return await response.json();
+        chrome.tabs.sendMessage(
+          tabs[0].id,
+          { action: 'scanConversation' },
+          (response) => {
+            if (chrome.runtime.lastError) {
+              reject(new Error(chrome.runtime.lastError.message));
+              return;
+            }
 
-    return generateMockResponse(requestData);
+            if (response && response.context) {
+              resolve(response.context);
+            } else {
+              reject(new Error('No conversation found'));
+            }
+          }
+        );
+      });
+    });
   }
 
   /**
-   * Step 6: Display response options
+   * Send conversation to backend and get 3 replies
+   * This is where you'll integrate your AI backend
    */
-  function displayResults(options) {
-    hideLoading();
-    
-    // Clear previous results
-    optionsContainer.innerHTML = '';
-    
-    // Create option cards
-    options.forEach((option, index) => {
-      const card = createOptionCard(option, index + 1);
-      optionsContainer.appendChild(card);
+  async function generateReplies(conversation) {
+    // Simulate API delay
+    await delay(2000);
+
+    // REPLACE THIS WITH YOUR ACTUAL BACKEND CALL:
+    /*
+    const response = await fetch('YOUR_BACKEND_API_ENDPOINT', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messages: conversation.messages,
+        context: {
+          tone: conversation.tone,
+          hasEmojis: conversation.hasEmojis,
+          isQuestion: conversation.isQuestion
+        }
+      })
     });
     
-    // Show results section
-    resultsSection.classList.add('visible');
+    const data = await response.json();
+    return {
+      recommended: data.recommended,
+      backup1: data.backup[0],
+      backup2: data.backup[1]
+    };
+    */
+
+    // Mock response for demo (REMOVE THIS in production)
+    return generateMockReplies(conversation);
   }
 
   /**
-   * Create an individual option card (Step 6)
+   * Display the 3 generated replies
    */
-  function createOptionCard(optionText, index) {
-    const card = document.createElement('div');
-    card.className = 'option-card';
+  function displayReplies(replies) {
+    // Set reply texts
+    recommendedText.textContent = replies.recommended;
+    backupText1.textContent = replies.backup1;
+    backupText2.textContent = replies.backup2;
+
+    // Show results
+    showResults();
+  }
+
+  /**
+   * Handle copy to clipboard
+   */
+  function handleCopy(replyType, button) {
+    let text = '';
     
-    card.innerHTML = `
-      <div class="option-header">
-        <span class="option-label">Option ${index}</span>
-        <span class="copy-indicator">Copied!</span>
-      </div>
-      <div class="option-text">${escapeHtml(optionText)}</div>
-    `;
+    if (replyType === 'recommended') {
+      text = recommendedText.textContent;
+    } else if (replyType === 'backup-1') {
+      text = backupText1.textContent;
+    } else if (replyType === 'backup-2') {
+      text = backupText2.textContent;
+    }
 
-    // Step 7: Copy to clipboard on click
-    card.addEventListener('click', () => {
-      copyToClipboard(optionText, card);
-    });
-
-    return card;
-  }
-
-  /**
-   * Step 7: Copy text to clipboard
-   */
-  function copyToClipboard(text, cardElement) {
     navigator.clipboard.writeText(text).then(() => {
-      // Show copied indicator
-      const indicator = cardElement.querySelector('.copy-indicator');
-      indicator.classList.add('visible');
-      
       // Visual feedback
-      cardElement.style.borderColor = '#4ade80';
+      const originalText = button.innerHTML;
+      button.classList.add('copied');
+      button.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg> Copied!';
       
       setTimeout(() => {
-        indicator.classList.remove('visible');
-        cardElement.style.borderColor = '';
+        button.classList.remove('copied');
+        button.innerHTML = originalText;
       }, 2000);
     }).catch(err => {
       console.error('Copy failed:', err);
@@ -206,83 +195,156 @@
   }
 
   /**
+   * Handle insert into chat input field
+   */
+  function handleInsert(replyType) {
+    let text = '';
+    
+    if (replyType === 'recommended') {
+      text = recommendedText.textContent;
+    } else if (replyType === 'backup-1') {
+      text = backupText1.textContent;
+    } else if (replyType === 'backup-2') {
+      text = backupText2.textContent;
+    }
+
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]) {
+        chrome.tabs.sendMessage(
+          tabs[0].id,
+          { action: 'insertReply', text: text },
+          (response) => {
+            if (response && response.success) {
+              showNotification('Reply inserted! ✓');
+            }
+          }
+        );
+      }
+    });
+  }
+
+  /**
+   * Regenerate replies with same conversation
+   */
+  async function handleRegenerate() {
+    if (!currentConversation) return;
+
+    showLoading();
+
+    try {
+      const replies = await generateReplies(currentConversation);
+      currentReplies = replies;
+      displayReplies(replies);
+    } catch (error) {
+      console.error('Regeneration error:', error);
+      showError('Failed to regenerate replies');
+      showResults();
+    }
+  }
+
+  /**
+   * Start new scan
+   */
+  function handleNewScan() {
+    currentConversation = null;
+    currentReplies = null;
+    showScanSection();
+  }
+
+  /**
    * UI State Management
    */
+  function showScanSection() {
+    scanSection.classList.remove('hidden');
+    loadingState.classList.remove('visible');
+    resultsSection.classList.remove('visible');
+  }
+
   function showLoading() {
-    generateBtn.disabled = true;
+    scanSection.classList.add('hidden');
     loadingState.classList.add('visible');
     resultsSection.classList.remove('visible');
   }
 
-  function hideLoading() {
-    generateBtn.disabled = false;
+  function showResults() {
+    scanSection.classList.add('hidden');
     loadingState.classList.remove('visible');
+    resultsSection.classList.add('visible');
   }
 
   function showError(message) {
-    // Simple error display - can be enhanced with a toast/notification
     alert(message);
   }
 
+  function showNotification(message) {
+    const notification = document.createElement('div');
+    notification.textContent = message;
+    notification.style.cssText = `
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #4ade80;
+      color: white;
+      padding: 12px 20px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      z-index: 9999;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    `;
+    document.body.appendChild(notification);
+
+    setTimeout(() => {
+      notification.remove();
+    }, 2000);
+  }
+
   /**
-   * Utility Functions
+   * Utility
    */
   function delay(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
-  function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-  }
-
   /**
-   * Mock Response Generator
-   * Replace this entire function with actual backend API in production
+   * Mock Reply Generator
+   * REMOVE THIS ENTIRE FUNCTION IN PRODUCTION
+   * Replace with actual backend API call
    */
-  function generateMockResponse(requestData) {
-    const { message, tone, persona } = requestData;
-    
-    // Generate 3 variations based on tone
-    const toneVariations = {
-      calm: {
-        prefix: "I wanted to share that",
-        style: "gentle and measured"
+  function generateMockReplies(conversation) {
+    const { tone, hasEmojis } = conversation;
+
+    // Generate based on detected tone
+    const toneReplies = {
+      casual: {
+        recommended: "yeah totally! sounds good to me",
+        backup1: "for sure! i'm down",
+        backup2: "yeah definitely 👍"
       },
-      direct: {
-        prefix: "Here's what I need to say:",
-        style: "clear and straightforward"
+      formal: {
+        recommended: "Thank you for reaching out. I'd be happy to help with that.",
+        backup1: "I appreciate you letting me know. I'll take care of this.",
+        backup2: "Thanks for the update. I'll follow up shortly."
       },
-      friendly: {
-        prefix: "Hey! Just wanted to mention",
-        style: "warm and approachable"
+      enthusiastic: {
+        recommended: "omg yes!! that sounds amazing! 🎉",
+        backup1: "absolutely!! i'm so excited about this!",
+        backup2: "yes yes yes! can't wait!!"
       },
-      respectful: {
-        prefix: "I'd like to respectfully share",
-        style: "considerate and thoughtful"
+      neutral: {
+        recommended: "Got it, thanks for letting me know.",
+        backup1: "Understood. I'll look into this.",
+        backup2: "Thanks for the heads up."
       }
     };
 
-    const variation = toneVariations[tone] || toneVariations.calm;
-    
-    // Generate 3 options
-    const options = [
-      `${variation.prefix} ${message.toLowerCase()}. I appreciate your understanding on this.`,
-      `${message.charAt(0).toUpperCase() + message.slice(1)}. I wanted to make sure we're on the same page about this.`,
-      `Just wanted to reach out about this: ${message.toLowerCase()}. Let me know if you have any questions.`
-    ];
-
-    // If persona provided, add note about style matching
-    const personaNote = persona ? " (adapted to match your writing style)" : "";
+    const selectedReplies = toneReplies[tone] || toneReplies.neutral;
 
     return {
-      options: options,
-      metadata: {
-        tone: tone,
-        hasPersona: !!persona,
-        note: `Generated with ${variation.style} tone${personaNote}`
-      }
+      recommended: selectedReplies.recommended,
+      backup1: selectedReplies.backup1,
+      backup2: selectedReplies.backup2
     };
   }
 
