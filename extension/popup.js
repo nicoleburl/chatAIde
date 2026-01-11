@@ -122,33 +122,31 @@
     // Simulate API delay
     await delay(2000);
 
-    // REPLACE THIS WITH YOUR ACTUAL BACKEND CALL:
-    /*
-    const response = await fetch('YOUR_BACKEND_API_ENDPOINT', {
+    const response = await fetch('http://localhost:3001/generate-reply', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
         messages: conversation.messages,
-        context: {
-          tone: conversation.tone,
-          hasEmojis: conversation.hasEmojis,
-          isQuestion: conversation.isQuestion
-        }
-      })
-    });
-    
-    const data = await response.json();
-    return {
-      recommended: data.recommended,
-      backup1: data.backup[0],
-      backup2: data.backup[1]
-    };
-    */
+        age: conversation.age || 20 // use age if you have it
+        })
+      });
 
-    // Mock response for demo (REMOVE THIS in production)
-    return generateMockReplies(conversation);
+if (!response.ok) {
+  throw new Error('Failed to fetch from backend');
+}
+
+const data = await response.json();
+
+// Assuming your backend returns { replies: [recommended, backup1, backup2] }
+return {
+  recommended: data.replies[0],
+  backup1: data.replies[1],
+  backup2: data.replies[2]
+};
+
+return generateMockReplies(conversation);
   }
 
   /**
