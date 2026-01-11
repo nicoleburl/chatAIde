@@ -344,8 +344,19 @@
           tabs[0].id,
           { action: 'insertReply', text: text },
           (response) => {
+            if (chrome.runtime.lastError) {
+              console.error('Insert reply messaging error:', chrome.runtime.lastError.message);
+              showError('Failed to insert reply', { chromeError: chrome.runtime.lastError.message });
+              return;
+            }
+
             if (response && response.success) {
               showNotification('Reply inserted! ✓');
+            } else {
+              console.warn('Insert reply failed or was not verified by content script', response);
+              const debug = response && response.debug ? response.debug : { message: 'Insertion failed' };
+              debug.suggestion = 'Open the messaging page console (DevTools) and look for insertion logs';
+              showError('Failed to insert reply', debug);
             }
           }
         );
