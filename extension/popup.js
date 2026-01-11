@@ -82,7 +82,15 @@
 
     } catch (error) {
       console.error('Error:', error);
-      showError('Unable to scan conversation. Make sure you\'re on a messaging platform.');
+
+      // Provide more helpful guidance depending on the failure
+      const msg = (error && error.message) ? error.message : '';
+      if (/Could not establish connection|No active tab|No conversation found/i.test(msg)) {
+        showError("Unable to scan conversation. Make sure you're on a supported messaging site (WhatsApp Web, Messenger) and the page is the active tab.");
+      } else {
+        showError("Unable to scan conversation. " + (msg || 'Please try again.'));
+      }
+
       showScanSection();
     }
   }
