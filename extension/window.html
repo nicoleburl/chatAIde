@@ -131,6 +131,45 @@
       max-width: 300px;
     }
 
+    .error-box {
+      margin-top: 12px;
+      padding: 10px 12px;
+      background: #fff1f2;
+      color: #991b1b;
+      border-radius: 8px;
+      font-size: 13px;
+      display: none;
+      text-align: left;
+      word-break: break-word;
+    }
+
+    .error-box.visible {
+      display: block;
+    }
+
+    .details-toggle {
+      margin-top: 8px;
+      background: transparent;
+      border: none;
+      color: #333;
+      text-decoration: underline;
+      cursor: pointer;
+      font-size: 12px;
+      padding: 4px 6px;
+    }
+
+    .error-details {
+      margin-top: 8px;
+      background: #f7f7f7;
+      padding: 8px;
+      border-radius: 6px;
+      max-height: 120px;
+      overflow: auto;
+      font-size: 12px;
+      white-space: pre-wrap;
+      display: none;
+    }
+
     .scan-btn {
       width: 100%;
       max-width: 300px;
@@ -495,6 +534,15 @@
             </svg>
             Scan & Generate
           </button>
+
+          <div id="error-box" class="error-box" aria-hidden="true">
+            <div id="error-message"></div>
+            <div style="display:flex; gap:8px; align-items:center; margin-top:8px;">
+              <button id="error-toggle-btn" class="details-toggle" style="display:none;">Show details</button>
+              <button id="error-copy-btn" class="details-toggle" style="display:none;">Copy</button>
+            </div>
+            <pre id="error-details" class="error-details" aria-hidden="true"></pre>
+          </div>
 
           <div class="info-list">
             <div class="info-item">
