@@ -11,7 +11,7 @@
     "<all_urls>"
   ],
   "action": {
-    "default_popup": "popup.html",
+    "default_popup": "window.html",
     "default_icon": {
       "16": "icon.png",
       "48": "icon.png",
