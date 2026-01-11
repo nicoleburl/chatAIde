@@ -1,3 +1,4 @@
+
 /**
  * Handles text selection and communication with popup
  */
@@ -214,7 +215,7 @@
 
         const dispatchInputEvents = (el, txt) => {
           try {
-            el.dispatchEvent(new InputEvent('input', { bubbles: true, data: txt, inputType: 'insertText' }));
+            el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText' }));
           } catch (e) {
             el.dispatchEvent(new Event('input', { bubbles: true }));
           }
