@@ -101,10 +101,18 @@
         const { tone, hasEmojis } = detectTone(joined);
 
         // Build debug info to aid diagnostics
+        const selectorCounts = {
+          whatsapp: document.querySelectorAll('span.selectable-text, div.copyable-text, [data-testid^="msg-"]').length,
+          messenger: document.querySelectorAll('[data-testid="message-text"], [data-testid^="msg"]').length,
+          generic: document.querySelectorAll('div, span, p').length
+        };
+
         const debug = {
           site,
+          url: window.location.href,
           messageCount: messages.length,
-          sample: messages.slice(0, 5)
+          sample: messages.slice(0, 5),
+          selectorCounts
         };
 
         console.log('Scan result debug:', debug);
