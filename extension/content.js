@@ -136,56 +136,194 @@
         const trySelectors = (selectors) => {
           for (const sel of selectors) {
             const el = document.querySelector(sel);
-            if (el && el.offsetParent !== null) return el;
+            if (el && el.offsetParent !== null) return { el, selector: sel };
           }
           return null;
         };
 
         // Site-specific insertion order
-        const site = (window.location.hostname || '').includes('web.whatsapp.com') ? 'whatsapp' : ((window.location.hostname || '').includes('messenger.com') || (window.location.hostname || '').includes('facebook.com')) ? 'messenger' : 'other';
+        const hostname = (window.location.hostname || '');
+        const site = hostname.includes('web.whatsapp.com') ? 'whatsapp' : (hostname.includes('messenger.com') || hostname.includes('facebook.com')) ? 'messenger' : 'other';
 
-        let input = null;
+        let tryResult = null;
         if (site === 'whatsapp') {
-          input = trySelectors(['div[contenteditable="true"][data-tab]', 'div[contenteditable="true"]', 'textarea']);
+          // WhatsApp has multiple contenteditable areas (search, chat input). Prefer the chat input in the footer
+          const candidates = Array.from(document.querySelectorAll('div[contenteditable="true"], textarea'))
+            .filter(el => el && el.offsetParent !== null);
+
+          // Heuristics to prefer the message input:
+          const preferred = candidates.filter(el => {
+            // If it's inside a footer area it's very likely the chat input
+            if (el.closest('footer')) return true;
+
+            // If attributes contain 'message' or 'type a message' it's likely the chat composer
+            const title = (el.getAttribute('title') || '').toLowerCase();
+            const aria = (el.getAttribute('aria-label') || '').toLowerCase();
+            if (/message/.test(title) || /message/.test(aria) || /type a message/.test(aria)) return true;
+
+            // Exclude obvious search fields: elements under header or search containers
+            if (el.closest('header') || el.closest('[role="search"]') || el.closest('.app-search') || el.closest('.chat-search')) return false;
+
+            return false;
+          });
+
+          if (preferred.length) {
+            // Choose the last preferred input (most recent / bottom of DOM)
+            const el = preferred[preferred.length - 1];
+            tryResult = { el, selector: 'whatsapp-preferred' };
+          } else if (candidates.length) {
+            // Fallback to last visible contenteditable
+            const el = candidates[candidates.length - 1];
+            tryResult = { el, selector: 'whatsapp-fallback' };
+          } else {
+            tryResult = null;
+          }
         } else if (site === 'messenger') {
-          input = trySelectors(['div[role="textbox"][contenteditable="true"]', 'div[contenteditable="true"]', 'textarea']);
+          tryResult = trySelectors(['div[role="textbox"][contenteditable="true"]', 'div[contenteditable="true"]', 'textarea']);
         } else {
-          input = trySelectors(['div[contenteditable="true"]', 'textarea', 'input[type="text"]']);
+          tryResult = trySelectors(['div[contenteditable="true"]', 'textarea', 'input[type="text"]']);
         }
 
-        if (input) {
-          input.focus();
+        const debugBase = { site, selector: tryResult ? tryResult.selector : null, url: window.location.href };
 
-          if (input.isContentEditable) {
-            // Try using execCommand for better compatibility with React-managed inputs
+        if (!tryResult) {
+          console.warn('No chat input found to insert reply', debugBase);
+          sendResponse({ success: false, debug: Object.assign({ error: 'no_input' }, debugBase) });
+          return;
+        }
+
+        const input = tryResult.el;
+        try {
+          input.focus();
+        } catch (e) {
+          // ignoring focus errors
+        }
+
+        const setCaretToEnd = (el) => {
+          try {
+            const range = document.createRange();
+            range.selectNodeContents(el);
+            range.collapse(false);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+          } catch (e) {
+            // ignore
+          }
+        };
+
+        const dispatchInputEvents = (el, txt) => {
+          try {
+            el.dispatchEvent(new InputEvent('input', { bubbles: true, data: txt, inputType: 'insertText' }));
+          } catch (e) {
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+        };
+
+        // Attempt multiple strategies, gather debug information about each
+        const debug = Object.assign({}, debugBase);
+        let inserted = false;
+
+        if (input.isContentEditable) {
+          debug.attempts = debug.attempts || [];
+
+          // 1) Try execCommand insertText
+          try {
+            const ok = document.execCommand('insertText', false, text);
+            debug.attempts.push({ method: 'execCommand', result: ok });
+            setCaretToEnd(input);
+            dispatchInputEvents(input, text);
+            const content = (input.innerText || input.textContent || '').trim();
+            debug.postExec = content;
+            if (content && (content.includes(text) || content === text)) {
+              inserted = true;
+            }
+          } catch (e) {
+            debug.attempts.push({ method: 'execCommand', error: String(e) });
+          }
+
+          // 2) Try direct node replacement (single text node or textContent)
+          if (!inserted) {
             try {
-              document.execCommand('selectAll', false, null);
-              document.execCommand('insertText', false, text);
+              if (input.childNodes.length === 1 && input.childNodes[0].nodeType === Node.TEXT_NODE) {
+                input.childNodes[0].nodeValue = text;
+                debug.attempts.push({ method: 'singleTextNodeReplace' });
+              } else {
+                input.textContent = text;
+                debug.attempts.push({ method: 'textContentReplace' });
+              }
+
+              setCaretToEnd(input);
+              dispatchInputEvents(input, text);
+
+              const content2 = (input.innerText || input.textContent || '').trim();
+              debug.postReplace = content2;
+              if (content2 && (content2.includes(text) || content2 === text)) {
+                inserted = true;
+              }
             } catch (e) {
-              // Fallback to replacing text nodes
+              debug.attempts.push({ method: 'replace', error: String(e) });
+            }
+          }
+
+          // 3) Try range insert
+          if (!inserted) {
+            try {
               const range = document.createRange();
               range.selectNodeContents(input);
               range.deleteContents();
               range.insertNode(document.createTextNode(text));
-            }
+              debug.attempts.push({ method: 'rangeInsert' });
 
-            // Dispatch events so frameworks detect the change
-            input.dispatchEvent(new Event('input', { bubbles: true }));
-            input.dispatchEvent(new Event('change', { bubbles: true }));
-          } else {
-            input.value = text;
-            input.dispatchEvent(new Event('input', { bubbles: true }));
-            input.dispatchEvent(new Event('change', { bubbles: true }));
+              setCaretToEnd(input);
+              dispatchInputEvents(input, text);
+
+              const content3 = (input.innerText || input.textContent || '').trim();
+              debug.postRange = content3;
+              if (content3 && (content3.includes(text) || content3 === text)) {
+                inserted = true;
+              }
+            } catch (e) {
+              debug.attempts.push({ method: 'rangeInsert', error: String(e) });
+            }
           }
 
-          sendResponse({ success: true });
+          // 4) Final verification and response
+          debug.finalContent = (input.innerText || input.textContent || '').trim();
+          if (inserted) {
+            console.log('Insert succeeded', debug);
+            sendResponse({ success: true });
+            return;
+          } else {
+            console.warn('Insert verification failed for contenteditable', debug);
+            sendResponse({ success: false, debug });
+            return;
+          }
         } else {
-          console.warn('No chat input found to insert reply');
-          sendResponse({ success: false });
+          // Standard input/textarea
+          try {
+            input.value = text;
+            dispatchInputEvents(input, text);
+            debug.finalValue = input.value;
+            if (input.value === text) {
+              console.log('Input value set successfully', debug);
+              sendResponse({ success: true });
+              return;
+            } else {
+              console.warn('Insertion verification failed for input/textarea', debug);
+              sendResponse({ success: false, debug });
+              return;
+            }
+          } catch (e) {
+            console.error('Failed setting value on input:', e, debug);
+            sendResponse({ success: false, debug: Object.assign(debug, { error: String(e) }) });
+            return;
+          }
         }
       } catch (err) {
-        console.error('Insert failed:', err);
-        sendResponse({ success: false });
+        console.error('Insert failed unexpected:', err);
+        sendResponse({ success: false, debug: { error: err && err.message ? err.message : String(err) } });
       }
 
       return;
