@@ -24,6 +24,13 @@
   const backupText1 = document.getElementById('backup-text-1');
   const backupText2 = document.getElementById('backup-text-2');
 
+  // Error box in-popup
+  const errorBox = document.getElementById('error-box');
+  const errorMessageEl = document.getElementById('error-message');
+  const errorToggleBtn = document.getElementById('error-toggle-btn');
+  const errorCopyBtn = document.getElementById('error-copy-btn');
+  const errorDetailsPre = document.getElementById('error-details');
+
   // Initialize
   init();
 
@@ -60,6 +67,37 @@
         handleInsert(replyType);
       }
     });
+
+    // Error box toggle & copy handlers
+    if (errorToggleBtn) {
+      errorToggleBtn.addEventListener('click', () => {
+        const isVisible = errorDetailsPre && errorDetailsPre.style.display === 'block';
+        if (isVisible) {
+          errorDetailsPre.style.display = 'none';
+          errorDetailsPre.setAttribute('aria-hidden', 'true');
+          errorToggleBtn.textContent = 'Show details';
+        } else {
+          if (errorDetailsPre) {
+            errorDetailsPre.style.display = 'block';
+            errorDetailsPre.setAttribute('aria-hidden', 'false');
+            errorToggleBtn.textContent = 'Hide details';
+          }
+        }
+      });
+    }
+
+    if (errorCopyBtn) {
+      errorCopyBtn.addEventListener('click', () => {
+        if (!errorDetailsPre || !errorDetailsPre.textContent) return;
+        navigator.clipboard.writeText(errorDetailsPre.textContent).then(() => {
+          const original = errorCopyBtn.textContent;
+          errorCopyBtn.textContent = 'Copied!';
+          setTimeout(() => errorCopyBtn.textContent = original, 1400);
+        }).catch(() => {
+          // ignore copy errors
+        });
+      });
+    }
   }
 
   /**
@@ -83,13 +121,21 @@
     } catch (error) {
       console.error('Error:', error);
 
-      // Provide more helpful guidance depending on the failure
+      // Provide more helpful guidance depending on the failure and include debug details
       const msg = (error && error.message) ? error.message : '';
+      let friendly = "Unable to scan conversation.";
       if (/Could not establish connection|No active tab|No conversation found/i.test(msg)) {
-        showError("Unable to scan conversation. Make sure you're on a supported messaging site (WhatsApp Web, Messenger) and the page is the active tab.");
+        friendly = "Unable to scan conversation. Make sure you're on a supported messaging site (WhatsApp Web, Messenger) and the page is the active tab.";
+      } else if (/inject|content script/i.test(msg)) {
+        friendly = "Failed to inject the content script into the page. This may be caused by page restrictions or a site that blocks scripts.";
+      } else if (/Failed to fetch from backend/i.test(msg)) {
+        friendly = "The backend failed to generate replies. Check that the AI server is running.";
       } else {
-        showError("Unable to scan conversation. " + (msg || 'Please try again.'));
+        friendly = "Unable to scan conversation. " + (msg || 'Please try again.');
       }
+
+      // Pass along structured debug details if available
+      showError(friendly, error && error.debug ? error.debug : { message: msg });
 
       showScanSection();
     }
@@ -98,11 +144,52 @@
   /**
    * Scan conversation messages from content script
    */
+  async function ensureContentScript(tabId) {
+    return new Promise((resolve, reject) => {
+      try {
+        if (!chrome.scripting || !chrome.scripting.executeScript) {
+          // Older Manifest v2 or no scripting API available
+          resolve();
+          return;
+        }
+
+        chrome.scripting.executeScript({
+          target: { tabId: tabId },
+          files: ['content.js']
+        }, (results) => {
+          if (chrome.runtime.lastError) {
+            const err = new Error('Failed to inject content script: ' + chrome.runtime.lastError.message);
+            err.debug = { lastError: chrome.runtime.lastError.message };
+            reject(err);
+            return;
+          }
+
+          resolve();
+        });
+      } catch (err) {
+        // If scripting API isn't available, proceed and let sendMessage fail gracefully
+        console.warn('ensureContentScript warning:', err);
+        resolve();
+      }
+    });
+  }
+
   async function scanConversation() {
     return new Promise((resolve, reject) => {
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
         if (!tabs[0]) {
           reject(new Error('No active tab'));
+          return;
+        }
+
+        try {
+          // Try to inject content script to ensure message receiver exists
+          await ensureContentScript(tabs[0].id);
+        } catch (injectErr) {
+          // If injection failed, include this in the error to show to the user
+          const e = new Error('Failed to ensure content script is present');
+          e.debug = { injectErr: injectErr && (injectErr.message || String(injectErr)) };
+          reject(e);
           return;
         }
 
@@ -111,14 +198,22 @@
           { action: 'scanConversation' },
           (response) => {
             if (chrome.runtime.lastError) {
-              reject(new Error(chrome.runtime.lastError.message));
+              const e = new Error('Chrome runtime error when messaging tab: ' + chrome.runtime.lastError.message);
+              e.debug = { lastError: chrome.runtime.lastError.message };
+              reject(e);
               return;
             }
 
             if (response && response.context) {
               resolve(response.context);
+            } else if (response && response.debug) {
+              // Content script responded but didn't find messages — include debug object
+              const e = new Error('No conversation found on page');
+              e.debug = response.debug;
+              reject(e);
             } else {
-              reject(new Error('No conversation found'));
+              const e = new Error('No conversation found');
+              reject(e);
             }
           }
         );
@@ -268,22 +363,74 @@ return generateMockReplies(conversation);
     scanSection.classList.remove('hidden');
     loadingState.classList.remove('visible');
     resultsSection.classList.remove('visible');
+    if (errorBox) {
+      errorBox.classList.remove('visible');
+      errorBox.setAttribute('aria-hidden', 'true');
+      errorBox.textContent = '';
+    }
   }
 
   function showLoading() {
     scanSection.classList.add('hidden');
     loadingState.classList.add('visible');
     resultsSection.classList.remove('visible');
+    if (errorBox) {
+      errorBox.classList.remove('visible');
+      errorBox.setAttribute('aria-hidden', 'true');
+      errorBox.textContent = '';
+    }
   }
 
   function showResults() {
     scanSection.classList.add('hidden');
     loadingState.classList.remove('visible');
     resultsSection.classList.add('visible');
+    if (errorBox) {
+      errorBox.classList.remove('visible');
+      errorBox.setAttribute('aria-hidden', 'true');
+      errorBox.textContent = '';
+    }
   }
 
-  function showError(message) {
-    alert(message);
+  function showError(message, details) {
+    console.warn('Popup error:', message, details);
+
+    // Render message into the in-popup error box if available
+    if (errorBox && errorMessageEl) {
+      // main message
+      errorMessageEl.textContent = message;
+
+      // details (if any)
+      if (details) {
+        try {
+          errorDetailsPre.textContent = typeof details === 'string' ? details : JSON.stringify(details, null, 2);
+        } catch (e) {
+          errorDetailsPre.textContent = String(details);
+        }
+        if (errorToggleBtn) errorToggleBtn.style.display = 'inline-block';
+        if (errorCopyBtn) errorCopyBtn.style.display = 'inline-block';
+      } else {
+        if (errorDetailsPre) {
+          errorDetailsPre.textContent = '';
+          errorDetailsPre.style.display = 'none';
+          errorDetailsPre.setAttribute('aria-hidden', 'true');
+        }
+        if (errorToggleBtn) errorToggleBtn.style.display = 'none';
+        if (errorCopyBtn) errorCopyBtn.style.display = 'none';
+      }
+
+      // show the box and collapse details initially
+      errorBox.classList.add('visible');
+      errorBox.setAttribute('aria-hidden', 'false');
+      if (errorDetailsPre) {
+        errorDetailsPre.style.display = 'none';
+        errorDetailsPre.setAttribute('aria-hidden', 'true');
+      }
+      if (errorToggleBtn) errorToggleBtn.textContent = 'Show details';
+    } else {
+      // fallback to alert when UI not available
+      alert(message + (details ? '\n\nDetails:\n' + (typeof details === 'string' ? details : JSON.stringify(details, null, 2)) : ''));
+    }
   }
 
   function showNotification(message) {
